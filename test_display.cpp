@@ -117,6 +117,10 @@ void spi_read_data(uint8_t* data, int len) {
     ioctl(spi_fd, SPI_IOC_MESSAGE(1), &transfer);
 }
 
+// Forward declarations
+void set_window(int x0, int y0, int x1, int y1);
+void spi_write_data_u16(uint16_t data);
+
 void init_display() {
     std::cout << "  Turning off backlight during initialization..." << std::endl;
     gpio_write(GPIO_TFT_BACKLIGHT, 0);

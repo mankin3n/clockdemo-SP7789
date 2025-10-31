@@ -117,6 +117,9 @@ void spi_write_data_u16(uint16_t data) {
     spi_write_data(bytes, 2);
 }
 
+// Forward declarations
+void set_window(int x0, int y0, int x1, int y1);
+
 // Initialize ST7789 display with thorough reset
 void init_display() {
     std::cout << "Initializing ST7789 display..." << std::endl;
