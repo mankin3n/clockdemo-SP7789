@@ -1,0 +1,150 @@
+╔══════════════════════════════════════════════════════════════════════════╗
+║      ST7789 Display - GPIO Connection Reference (90° Rotation)           ║
+║                   Raspberry Pi 4B Pinout                                 ║
+╚══════════════════════════════════════════════════════════════════════════╝
+
+┌─────────────────────────────────────────────────────────────────────────┐
+│                        CONNECTION TABLE                                  │
+├───────────────┬─────────────┬──────────┬──────────┬──────────────────────┤
+│ Display Pin   │ Pin Order   │ RPi GPIO │ Pin #    │ Description          │
+├───────────────┼─────────────┼──────────┼──────────┼──────────────────────┤
+│ GND           │ Pin 1       │ GND      │ Pin 6    │ Ground               │
+│ VCC           │ Pin 2       │ 3.3V     │ Pin 1    │ Power supply         │
+│ SCL           │ Pin 3       │ GPIO 11  │ Pin 23   │ SPI Clock (SCLK)     │
+│ SDA           │ Pin 4       │ GPIO 10  │ Pin 19   │ SPI Data (MOSI)      │
+│ RES           │ Pin 5       │ GPIO 24  │ Pin 18   │ Reset                │
+│ DC/RS         │ Pin 6       │ GPIO 25  │ Pin 22   │ Data/Command select  │
+│ CS            │ Pin 7       │ GPIO 8   │ Pin 24   │ Chip Select (CE0)    │
+│ BL            │ Pin 8       │ GPIO 18  │ Pin 12   │ Backlight control    │
+└───────────────┴─────────────┴──────────┴──────────┴──────────────────────┘
+
+╔══════════════════════════════════════════════════════════════════════════╗
+║                    RASPBERRY PI 4B GPIO LAYOUT                           ║
+╚══════════════════════════════════════════════════════════════════════════╝
+
+        ┌─────┬─────┐
+ 3V3 ◄──┤  1  │  2  ├━━━ 5V         Display VCC (Pin 2)
+   2 ━━━┤  3  │  4  ├━━━ 5V
+   3 ━━━┤  5  │  6  ├━━━ GND ◄────── Display GND (Pin 1)
+   4 ━━━┤  7  │  8  ├━━━ 14
+ GND ━━━┤  9  │ 10  ├━━━ 15
+  17 ━━━┤ 11  │ 12  ├━━━ 18 ◄────── Display BL (Pin 8)
+  27 ━━━┤ 13  │ 14  ├━━━ GND
+  22 ━━━┤ 15  │ 16  ├━━━ 23
+ 3V3 ━━━┤ 17  │ 18  ├━━━ 24 ◄────── Display RES (Pin 5)
+  10 ◄──┤ 19  │ 20  ├━━━ GND        Display SDA (Pin 4)
+   9 ━━━┤ 21  │ 22  ├━━━ 25 ◄────── Display DC/RS (Pin 6)
+  11 ◄──┤ 23  │ 24  ├━━━  8 ◄────── Display SCL (Pin 3)  Display CS (Pin 7)
+ GND ━━━┤ 25  │ 26  ├━━━  7
+   0 ━━━┤ 27  │ 28  ├━━━  1
+   5 ━━━┤ 29  │ 30  ├━━━ GND
+   6 ━━━┤ 31  │ 32  ├━━━ 12
+  13 ━━━┤ 33  │ 34  ├━━━ GND
+  19 ━━━┤ 35  │ 36  ├━━━ 16
+  26 ━━━┤ 37  │ 38  ├━━━ 20
+ GND ━━━┤ 39  │ 40  ├━━━ 21
+        └─────┴─────┘
+
+Legend:
+  ◄──── = Connection to display
+  ━━━   = Available pin
+
+╔══════════════════════════════════════════════════════════════════════════╗
+║                         WIRING CHECKLIST                                 ║
+╚══════════════════════════════════════════════════════════════════════════╝
+
+Before powering on, verify:
+
+ [ ] Display Pin 1 (GND) → RPi Pin 6 (GND)
+ [ ] Display Pin 2 (VCC) → RPi Pin 1 (3.3V) - NOT 5V!
+ [ ] Display Pin 3 (SCL) → RPi Pin 23 (GPIO 11 - SPI Clock)
+ [ ] Display Pin 4 (SDA) → RPi Pin 19 (GPIO 10 - SPI MOSI)
+ [ ] Display Pin 5 (RES) → RPi Pin 18 (GPIO 24 - Reset)
+ [ ] Display Pin 6 (DC/RS) → RPi Pin 22 (GPIO 25 - Data/Command)
+ [ ] Display Pin 7 (CS) → RPi Pin 24 (GPIO 8 - Chip Select)
+ [ ] Display Pin 8 (BL) → RPi Pin 12 (GPIO 18 - Backlight)
+
+⚠️  CRITICAL WARNINGS:
+    - Use 3.3V ONLY! 5V will damage the display!
+    - Ensure good ground connection between Pi and display
+    - Double-check all pin numbers before powering on
+
+╔══════════════════════════════════════════════════════════════════════════╗
+║                      SOFTWARE CONFIGURATION                              ║
+╚══════════════════════════════════════════════════════════════════════════╝
+
+GPIO Pin Definitions (in code):
+    #define GPIO_TFT_DATA_CONTROL 25  // DC pin
+    #define GPIO_TFT_RESET_PIN 24     // RESET pin
+    #define GPIO_TFT_BACKLIGHT 18     // Backlight pin
+
+SPI Configuration:
+    Device: /dev/spidev0.0
+    Mode: SPI_MODE_0
+    Speed: 32 MHz
+    Bits per word: 8
+
+Enable SPI:
+    sudo raspi-config
+    → Interface Options → SPI → Yes → Reboot
+
+╔══════════════════════════════════════════════════════════════════════════╗
+║                        TESTING PROCEDURE                                 ║
+╚══════════════════════════════════════════════════════════════════════════╝
+
+1. Power OFF Raspberry Pi
+2. Connect all wires according to table above
+3. Triple-check all connections
+4. Power ON Raspberry Pi
+5. Run: sudo ./test_display
+6. Observe test sequence:
+   - Backlight should flash 3 times
+   - Screen should show colors: red, green, blue, white, black
+   - Screen should show color bars
+   - Screen should show gradient
+   - Screen should show checkerboard patterns
+
+If any test fails, power OFF and recheck connections!
+
+╔══════════════════════════════════════════════════════════════════════════╗
+║                      QUICK TROUBLESHOOTING                               ║
+╚══════════════════════════════════════════════════════════════════════════╝
+
+Problem: Display stays black
+Fix: - Check VCC (3.3V) and GND connections
+     - Verify backlight wire (GPIO 18)
+     - Run: sudo ./test_display
+
+Problem: Cannot open SPI device
+Fix: - Enable SPI: sudo raspi-config
+     - Reboot after enabling
+
+Problem: Permission denied
+Fix: - Run with sudo: sudo ./start.sh
+     - Or add user to groups: sudo usermod -a -G gpio,spi $USER
+
+Problem: Garbled or wrong colors
+Fix: - Check SDA connection (Display Pin 4 → RPi Pin 19)
+     - Check SCL connection (Display Pin 3 → RPi Pin 23)
+     - Verify 3.3V power is stable
+
+╔══════════════════════════════════════════════════════════════════════════╗
+║                        DISPLAY SPECS                                     ║
+╚══════════════════════════════════════════════════════════════════════════╝
+
+Model:          ST7789
+Size:           2.8 inches diagonal
+Resolution:     320 × 240 pixels
+Colors:         65,536 (RGB565)
+Interface:      SPI
+Voltage:        3.3V DC
+Backlight:      LED, controllable
+Orientation:    90° rotation (landscape mode)
+Current Draw:   ~100mA (typical, with backlight)
+
+═══════════════════════════════════════════════════════════════════════════
+
+For detailed setup instructions, see SETUP.md
+For project overview, see README.md
+
+═══════════════════════════════════════════════════════════════════════════

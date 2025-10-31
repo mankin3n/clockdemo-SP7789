@@ -1,0 +1,34 @@
+# Compiled binaries
+clock
+failsafe
+test_display
+
+# Object files
+*.o
+*.obj
+
+# Temporary files
+*.tmp
+*.swp
+*~
+
+# Log files
+logs/
+*.log
+
+# Build artifacts
+*.out
+*.exe
+
+# IDE files
+.vscode/
+.idea/
+*.code-workspace
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Backup files
+*.bak
+*.backup
