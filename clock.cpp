@@ -1,17 +1,13 @@
 // Digital Clock for ST7789 Display (320x240, 90° rotation)
-// Based on fbcp-ili9341 driver logic, adapted for ST7789
+// Using ST7789_TFT_RPI driver architecture with bcm2835 library
 
-#include <fcntl.h>
-#include <linux/fb.h>
-#include <linux/spi/spidev.h>
-#include <sys/ioctl.h>
-#include <sys/mman.h>
-#include <unistd.h>
+#include <bcm2835.h>
 #include <cstdint>
 #include <cstring>
 #include <ctime>
 #include <iostream>
 #include <signal.h>
+#include <unistd.h>
 
 // Display specifications (320x240 with 90° rotation = landscape)
 #define DISPLAY_WIDTH 320
@@ -19,11 +15,16 @@
 #define DISPLAY_DRAWABLE_WIDTH 320
 #define DISPLAY_DRAWABLE_HEIGHT 240
 
-// SPI Configuration (matching ST7789_TFT_RPI)
-#define SPI_BUS_CLOCK_DIVISOR 6
-#define GPIO_TFT_DATA_CONTROL 24  // DC pin
-#define GPIO_TFT_RESET_PIN 25     // RESET pin
+// GPIO Pin Configuration (Software SPI - matches ST7789_TFT_RPI SW SPI setup)
+#define TFT_CS_GPIO    RPI_BPLUS_GPIO_J8_32  // GPIO12 - CS/SS pin
+#define TFT_DC_GPIO    RPI_BPLUS_GPIO_J8_18  // GPIO24 - DC pin
+#define TFT_RST_GPIO   RPI_BPLUS_GPIO_J8_22  // GPIO25 - RESET pin
+#define TFT_SDATA_GPIO RPI_BPLUS_GPIO_J8_35  // GPIO19 - MOSI/SDA pin
+#define TFT_SCLK_GPIO  RPI_BPLUS_GPIO_J8_37  // GPIO26 - SCLK pin
 // Note: LED/Backlight connected to VCC (always on, no GPIO control needed)
+
+// SPI Communication Delay (for software SPI bit-banging)
+#define TFT_HIGHFREQ_DELAY 0  // Microseconds delay between bit operations
 
 // ST7789 Commands
 #define ST7789_NOP 0x00
@@ -49,8 +50,6 @@
 #define COLOR_YELLOW 0xFFE0
 
 // Global variables
-int spi_fd = -1;
-int gpio_fd = -1;
 volatile bool running = true;
 uint16_t framebuffer[DISPLAY_WIDTH * DISPLAY_HEIGHT];
 
@@ -59,146 +58,174 @@ void signal_handler(int signo) {
     running = false;
 }
 
-// GPIO helper functions (simplified version of fbcp-ili9341 logic)
-void gpio_write(int pin, int value) {
-    char path[64];
-    snprintf(path, sizeof(path), "/sys/class/gpio/gpio%d/value", pin);
-    int fd = open(path, O_WRONLY);
-    if (fd >= 0) {
-        write(fd, value ? "1" : "0", 1);
-        close(fd);
+// ST7789 Display Driver Class (following ST7789_TFT_RPI architecture)
+class ST7789_Driver {
+private:
+    uint16_t _highFreqDelay;
+
+    // Software SPI bit-banging (matching ST7789_TFT_RPI implementation)
+    void spiWriteByte(uint8_t byte) {
+        for (int i = 7; i >= 0; i--) {
+            bcm2835_gpio_write(TFT_SCLK_GPIO, LOW);
+            if (byte & (1 << i)) {
+                bcm2835_gpio_write(TFT_SDATA_GPIO, HIGH);
+            } else {
+                bcm2835_gpio_write(TFT_SDATA_GPIO, LOW);
+            }
+            if (_highFreqDelay != 0) {
+                bcm2835_delayMicroseconds(_highFreqDelay);
+            }
+            bcm2835_gpio_write(TFT_SCLK_GPIO, HIGH);
+            if (_highFreqDelay != 0) {
+                bcm2835_delayMicroseconds(_highFreqDelay);
+            }
+        }
     }
-}
 
-void gpio_export(int pin) {
-    int fd = open("/sys/class/gpio/export", O_WRONLY);
-    if (fd >= 0) {
-        char buf[8];
-        snprintf(buf, sizeof(buf), "%d", pin);
-        write(fd, buf, strlen(buf));
-        close(fd);
-        usleep(100000); // Wait for export to complete
+    void writeCommand(uint8_t cmd) {
+        bcm2835_gpio_write(TFT_DC_GPIO, LOW);  // Command mode
+        bcm2835_gpio_write(TFT_CS_GPIO, LOW);  // CS low (select)
+        spiWriteByte(cmd);
+        bcm2835_gpio_write(TFT_CS_GPIO, HIGH); // CS high (deselect)
     }
-}
 
-void gpio_set_direction(int pin, const char* direction) {
-    char path[64];
-    snprintf(path, sizeof(path), "/sys/class/gpio/gpio%d/direction", pin);
-    int fd = open(path, O_WRONLY);
-    if (fd >= 0) {
-        write(fd, direction, strlen(direction));
-        close(fd);
+    void writeData(uint8_t data) {
+        bcm2835_gpio_write(TFT_DC_GPIO, HIGH); // Data mode
+        bcm2835_gpio_write(TFT_CS_GPIO, LOW);  // CS low (select)
+        spiWriteByte(data);
+        bcm2835_gpio_write(TFT_CS_GPIO, HIGH); // CS high (deselect)
     }
-}
 
-// SPI communication (based on fbcp-ili9341 approach)
-void spi_write_command(uint8_t cmd) {
-    gpio_write(GPIO_TFT_DATA_CONTROL, 0); // Command mode
-    struct spi_ioc_transfer transfer = {};
-    transfer.tx_buf = (unsigned long)&cmd;
-    transfer.len = 1;
-    transfer.speed_hz = 32000000;
-    transfer.bits_per_word = 8;
-    ioctl(spi_fd, SPI_IOC_MESSAGE(1), &transfer);
-}
+public:
+    ST7789_Driver() : _highFreqDelay(TFT_HIGHFREQ_DELAY) {}
 
-void spi_write_data(const uint8_t* data, int len) {
-    gpio_write(GPIO_TFT_DATA_CONTROL, 1); // Data mode
-    struct spi_ioc_transfer transfer = {};
-    transfer.tx_buf = (unsigned long)data;
-    transfer.len = len;
-    transfer.speed_hz = 32000000;
-    transfer.bits_per_word = 8;
-    ioctl(spi_fd, SPI_IOC_MESSAGE(1), &transfer);
-}
+    // Setup GPIO pins for Software SPI (matching TFTSetupGPIO for SW SPI)
+    bool setupGPIO() {
+        std::cout << "Initializing bcm2835 library..." << std::endl;
+        if (!bcm2835_init()) {
+            std::cerr << "Error: bcm2835_init failed. Are you running as root?" << std::endl;
+            return false;
+        }
 
-void spi_write_data_u16(uint16_t data) {
-    uint8_t bytes[2] = {(uint8_t)(data >> 8), (uint8_t)(data & 0xFF)};
-    spi_write_data(bytes, 2);
-}
+        // Set GPIO pin modes to output
+        bcm2835_gpio_fsel(TFT_CS_GPIO, BCM2835_GPIO_FSEL_OUTP);
+        bcm2835_gpio_fsel(TFT_DC_GPIO, BCM2835_GPIO_FSEL_OUTP);
+        bcm2835_gpio_fsel(TFT_RST_GPIO, BCM2835_GPIO_FSEL_OUTP);
+        bcm2835_gpio_fsel(TFT_SDATA_GPIO, BCM2835_GPIO_FSEL_OUTP);
+        bcm2835_gpio_fsel(TFT_SCLK_GPIO, BCM2835_GPIO_FSEL_OUTP);
 
-// Forward declarations
-void set_window(int x0, int y0, int x1, int y1);
+        // Initialize pin states
+        bcm2835_gpio_write(TFT_CS_GPIO, HIGH);    // CS high (deselected)
+        bcm2835_gpio_write(TFT_SCLK_GPIO, LOW);   // Clock low
+        bcm2835_gpio_write(TFT_SDATA_GPIO, LOW);  // Data low
 
-// Initialize ST7789 display with thorough reset
-void init_display() {
-    std::cout << "Initializing ST7789 display..." << std::endl;
+        std::cout << "GPIO Setup Complete - Software SPI Mode" << std::endl;
+        std::cout << "  CS:    GPIO12 (Pin 32)" << std::endl;
+        std::cout << "  DC:    GPIO24 (Pin 18)" << std::endl;
+        std::cout << "  RESET: GPIO25 (Pin 22)" << std::endl;
+        std::cout << "  MOSI:  GPIO19 (Pin 35)" << std::endl;
+        std::cout << "  SCLK:  GPIO26 (Pin 37)" << std::endl;
 
-    // Note: LED/Backlight is connected to VCC (always on)
-
-    // Step 2: Hardware reset sequence (ensures clean state)
-    std::cout << "  - Performing hardware reset..." << std::endl;
-    gpio_write(GPIO_TFT_RESET_PIN, 1);
-    usleep(10000);  // Hold high
-    gpio_write(GPIO_TFT_RESET_PIN, 0);
-    usleep(50000);  // Hold low (reset active)
-    gpio_write(GPIO_TFT_RESET_PIN, 1);
-    usleep(150000); // Wait for reset to complete
-
-    // Step 3: Software reset (ensures all registers are cleared)
-    std::cout << "  - Sending software reset..." << std::endl;
-    spi_write_command(ST7789_SWRESET);
-    usleep(200000); // Wait longer after software reset
-
-    // Step 4: Wake up display
-    std::cout << "  - Waking up display..." << std::endl;
-    spi_write_command(ST7789_SLPOUT);
-    usleep(120000);
-
-    // Step 5: Configure display orientation and format
-    std::cout << "  - Configuring display (90° rotation)..." << std::endl;
-
-    // Memory Access Control (90° rotation = landscape mode)
-    // MADCTL bits: MY=0, MX=0, MV=1, ML=0, RGB=1, MH=0
-    // MV=1 swaps row/column (rotation), RGB=1 for RGB order
-    spi_write_command(ST7789_MADCTL);
-    uint8_t madctl = 0x60; // 0x60 = 90° rotation, RGB order
-    spi_write_data(&madctl, 1);
-
-    // Pixel Format: 16 bits/pixel (RGB565)
-    spi_write_command(ST7789_COLMOD);
-    uint8_t colmod = 0x55; // 16-bit color
-    spi_write_data(&colmod, 1);
-
-    // Normal display mode
-    spi_write_command(ST7789_NORON);
-    usleep(10000);
-
-    // Inversion on (often needed for ST7789)
-    spi_write_command(ST7789_INVON);
-    usleep(10000);
-
-    // Step 6: Clear screen to black before turning on
-    std::cout << "  - Clearing screen to black..." << std::endl;
-    set_window(0, 0, DISPLAY_WIDTH - 1, DISPLAY_HEIGHT - 1);
-    gpio_write(GPIO_TFT_DATA_CONTROL, 1); // Data mode
-
-    uint16_t black = COLOR_BLACK;
-    for (int i = 0; i < DISPLAY_WIDTH * DISPLAY_HEIGHT; i++) {
-        spi_write_data_u16(black);
+        return true;
     }
-    usleep(50000);
 
-    // Step 7: Turn on display
-    std::cout << "  - Turning on display..." << std::endl;
-    spi_write_command(ST7789_DISPON);
-    usleep(120000);
+    // Initialize display (matching ST7789_TFT_RPI initialization sequence)
+    void initDisplay() {
+        std::cout << "Initializing ST7789 display..." << std::endl;
 
-    std::cout << "Display initialization complete!" << std::endl;
-}
+        // Hardware reset sequence
+        std::cout << "  - Performing hardware reset..." << std::endl;
+        bcm2835_gpio_write(TFT_RST_GPIO, HIGH);
+        bcm2835_delay(10);
+        bcm2835_gpio_write(TFT_RST_GPIO, LOW);
+        bcm2835_delay(50);
+        bcm2835_gpio_write(TFT_RST_GPIO, HIGH);
+        bcm2835_delay(150);
 
-// Set display window
-void set_window(int x0, int y0, int x1, int y1) {
-    spi_write_command(ST7789_CASET);
-    spi_write_data_u16(x0);
-    spi_write_data_u16(x1);
+        // Software reset
+        std::cout << "  - Sending software reset..." << std::endl;
+        writeCommand(ST7789_SWRESET);
+        bcm2835_delay(200);
 
-    spi_write_command(ST7789_RASET);
-    spi_write_data_u16(y0);
-    spi_write_data_u16(y1);
+        // Sleep out
+        std::cout << "  - Waking up display..." << std::endl;
+        writeCommand(ST7789_SLPOUT);
+        bcm2835_delay(120);
 
-    spi_write_command(ST7789_RAMWR);
-}
+        // Configure display orientation and format
+        std::cout << "  - Configuring display (90° rotation)..." << std::endl;
+
+        // Memory Access Control (90° rotation)
+        writeCommand(ST7789_MADCTL);
+        writeData(0x60);  // 90° rotation, RGB order
+
+        // Pixel Format: 16 bits/pixel (RGB565)
+        writeCommand(ST7789_COLMOD);
+        writeData(0x55);  // 16-bit color
+
+        // Normal display mode
+        writeCommand(ST7789_NORON);
+        bcm2835_delay(10);
+
+        // Inversion on
+        writeCommand(ST7789_INVON);
+        bcm2835_delay(10);
+
+        // Display on
+        std::cout << "  - Turning on display..." << std::endl;
+        writeCommand(ST7789_DISPON);
+        bcm2835_delay(120);
+
+        std::cout << "Display initialization complete!" << std::endl;
+    }
+
+    // Set address window
+    void setAddrWindow(uint16_t x0, uint16_t y0, uint16_t x1, uint16_t y1) {
+        writeCommand(ST7789_CASET);
+        writeData(x0 >> 8);
+        writeData(x0 & 0xFF);
+        writeData(x1 >> 8);
+        writeData(x1 & 0xFF);
+
+        writeCommand(ST7789_RASET);
+        writeData(y0 >> 8);
+        writeData(y0 & 0xFF);
+        writeData(y1 >> 8);
+        writeData(y1 & 0xFF);
+
+        writeCommand(ST7789_RAMWR);
+    }
+
+    // Push pixel data
+    void pushPixel(uint16_t color) {
+        bcm2835_gpio_write(TFT_DC_GPIO, HIGH); // Data mode
+        bcm2835_gpio_write(TFT_CS_GPIO, LOW);  // CS low
+        spiWriteByte(color >> 8);
+        spiWriteByte(color & 0xFF);
+        bcm2835_gpio_write(TFT_CS_GPIO, HIGH); // CS high
+    }
+
+    // Push framebuffer to display
+    void pushFramebuffer(uint16_t* framebuffer, int width, int height) {
+        setAddrWindow(0, 0, width - 1, height - 1);
+
+        bcm2835_gpio_write(TFT_DC_GPIO, HIGH); // Data mode
+        bcm2835_gpio_write(TFT_CS_GPIO, LOW);  // CS low
+
+        for (int i = 0; i < width * height; i++) {
+            uint16_t pixel = framebuffer[i];
+            spiWriteByte(pixel >> 8);
+            spiWriteByte(pixel & 0xFF);
+        }
+
+        bcm2835_gpio_write(TFT_CS_GPIO, HIGH); // CS high
+    }
+
+    // Cleanup
+    void powerDown() {
+        bcm2835_close();
+    }
+};
 
 // Draw a filled rectangle
 void draw_rect(int x, int y, int w, int h, uint16_t color) {
@@ -263,63 +290,25 @@ void draw_text(int x, int y, const char* text, uint16_t color, int scale) {
     }
 }
 
-// Update display with framebuffer
-void update_display() {
-    set_window(0, 0, DISPLAY_WIDTH - 1, DISPLAY_HEIGHT - 1);
-
-    // Convert framebuffer to byte array and send
-    gpio_write(GPIO_TFT_DATA_CONTROL, 1); // Data mode
-
-    // Send in chunks for stability
-    const int chunk_size = 4096;
-    for (int i = 0; i < DISPLAY_WIDTH * DISPLAY_HEIGHT; i += chunk_size) {
-        int remaining = DISPLAY_WIDTH * DISPLAY_HEIGHT - i;
-        int count = remaining < chunk_size ? remaining : chunk_size;
-
-        struct spi_ioc_transfer transfer = {};
-        transfer.tx_buf = (unsigned long)(&framebuffer[i]);
-        transfer.len = count * 2;
-        transfer.speed_hz = 32000000;
-        transfer.bits_per_word = 8;
-        ioctl(spi_fd, SPI_IOC_MESSAGE(1), &transfer);
-    }
-}
-
 int main() {
-    std::cout << "Digital Clock for ST7789 Display (320x240, 90° rotation)" << std::endl;
+    std::cout << "==============================================\n";
+    std::cout << "Digital Clock for ST7789 Display\n";
+    std::cout << "Using ST7789_TFT_RPI driver architecture\n";
+    std::cout << "==============================================\n" << std::endl;
 
     // Setup signal handlers
     signal(SIGINT, signal_handler);
     signal(SIGTERM, signal_handler);
 
-    // Open SPI device
-    spi_fd = open("/dev/spidev0.0", O_RDWR);
-    if (spi_fd < 0) {
-        std::cerr << "Error: Cannot open SPI device /dev/spidev0.0" << std::endl;
-        std::cerr << "Make sure SPI is enabled in raspi-config" << std::endl;
+    // Create driver instance
+    ST7789_Driver display;
+
+    // Setup GPIO and initialize display
+    if (!display.setupGPIO()) {
         return 1;
     }
 
-    // Configure SPI mode
-    uint8_t mode = SPI_MODE_0;
-    uint8_t bits = 8;
-    uint32_t speed = 32000000;
-    ioctl(spi_fd, SPI_IOC_WR_MODE, &mode);
-    ioctl(spi_fd, SPI_IOC_WR_BITS_PER_WORD, &bits);
-    ioctl(spi_fd, SPI_IOC_WR_MAX_SPEED_HZ, &speed);
-
-    // Setup GPIO pins
-    gpio_export(GPIO_TFT_DATA_CONTROL);
-    gpio_export(GPIO_TFT_RESET_PIN);
-
-    usleep(200000);
-
-    gpio_set_direction(GPIO_TFT_DATA_CONTROL, "out");
-    gpio_set_direction(GPIO_TFT_RESET_PIN, "out");
-
-    // Initialize display
-    std::cout << "Initializing display..." << std::endl;
-    init_display();
+    display.initDisplay();
 
     std::cout << "Display initialized. Starting clock..." << std::endl;
 
@@ -359,7 +348,7 @@ int main() {
             draw_text(date_x, date_y, date_str, COLOR_YELLOW, date_scale);
 
             // Update display
-            update_display();
+            display.pushFramebuffer(framebuffer, DISPLAY_WIDTH, DISPLAY_HEIGHT);
         }
 
         usleep(100000); // Sleep 100ms
@@ -367,7 +356,7 @@ int main() {
 
     // Cleanup
     std::cout << "\nShutting down..." << std::endl;
-    close(spi_fd);
+    display.powerDown();
 
     return 0;
 }

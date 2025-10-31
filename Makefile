@@ -1,9 +1,9 @@
 # Makefile for ST7789 Digital Clock (90° rotation)
-# Alternative to build.sh for those who prefer make
+# Using ST7789_TFT_RPI driver architecture with bcm2835 library
 
 CXX = g++
 CXXFLAGS = -O3 -Wall -std=c++11
-LDFLAGS = -lpthread
+LDFLAGS = -lbcm2835 -lpthread
 
 # Targets
 TARGETS = clock failsafe test_display
