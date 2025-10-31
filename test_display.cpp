@@ -118,17 +118,21 @@ void spi_read_data(uint8_t* data, int len) {
 }
 
 void init_display() {
+    std::cout << "  Turning off backlight during initialization..." << std::endl;
+    gpio_write(GPIO_TFT_BACKLIGHT, 0);
+    usleep(50000);
+
     std::cout << "  Performing hardware reset..." << std::endl;
     gpio_write(GPIO_TFT_RESET_PIN, 1);
-    usleep(5000);
+    usleep(10000);  // Hold high
     gpio_write(GPIO_TFT_RESET_PIN, 0);
-    usleep(20000);
+    usleep(50000);  // Hold low (reset active)
     gpio_write(GPIO_TFT_RESET_PIN, 1);
-    usleep(150000);
+    usleep(150000); // Wait for reset to complete
 
     std::cout << "  Software reset..." << std::endl;
     spi_write_command(ST7789_SWRESET);
-    usleep(150000);
+    usleep(200000); // Wait longer after software reset
 
     std::cout << "  Waking up display..." << std::endl;
     spi_write_command(ST7789_SLPOUT);
@@ -149,12 +153,21 @@ void init_display() {
     spi_write_command(ST7789_INVON);
     usleep(10000);
 
+    std::cout << "  Clearing screen to black..." << std::endl;
+    set_window(0, 0, DISPLAY_WIDTH - 1, DISPLAY_HEIGHT - 1);
+    gpio_write(GPIO_TFT_DATA_CONTROL, 1);
+    for (int i = 0; i < DISPLAY_WIDTH * DISPLAY_HEIGHT; i++) {
+        spi_write_data_u16(COLOR_BLACK);
+    }
+    usleep(50000);
+
     std::cout << "  Turning on display..." << std::endl;
     spi_write_command(ST7789_DISPON);
     usleep(120000);
 
     std::cout << "  Turning on backlight..." << std::endl;
     gpio_write(GPIO_TFT_BACKLIGHT, 1);
+    usleep(50000);
 }
 
 void set_window(int x0, int y0, int x1, int y1) {

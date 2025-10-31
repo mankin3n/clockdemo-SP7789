@@ -117,23 +117,36 @@ void spi_write_data_u16(uint16_t data) {
     spi_write_data(bytes, 2);
 }
 
-// Initialize ST7789 display
+// Initialize ST7789 display with thorough reset
 void init_display() {
-    // Hardware reset
+    std::cout << "Initializing ST7789 display..." << std::endl;
+
+    // Step 1: Turn off backlight during initialization
+    std::cout << "  - Turning off backlight..." << std::endl;
+    gpio_write(GPIO_TFT_BACKLIGHT, 0);
+    usleep(50000);
+
+    // Step 2: Hardware reset sequence (ensures clean state)
+    std::cout << "  - Performing hardware reset..." << std::endl;
     gpio_write(GPIO_TFT_RESET_PIN, 1);
-    usleep(5000);
+    usleep(10000);  // Hold high
     gpio_write(GPIO_TFT_RESET_PIN, 0);
-    usleep(20000);
+    usleep(50000);  // Hold low (reset active)
     gpio_write(GPIO_TFT_RESET_PIN, 1);
-    usleep(150000);
+    usleep(150000); // Wait for reset to complete
 
-    // Software reset
+    // Step 3: Software reset (ensures all registers are cleared)
+    std::cout << "  - Sending software reset..." << std::endl;
     spi_write_command(ST7789_SWRESET);
-    usleep(150000);
+    usleep(200000); // Wait longer after software reset
 
-    // Sleep out
+    // Step 4: Wake up display
+    std::cout << "  - Waking up display..." << std::endl;
     spi_write_command(ST7789_SLPOUT);
     usleep(120000);
+
+    // Step 5: Configure display orientation and format
+    std::cout << "  - Configuring display (90° rotation)..." << std::endl;
 
     // Memory Access Control (90° rotation = landscape mode)
     // MADCTL bits: MY=0, MX=0, MV=1, ML=0, RGB=1, MH=0
@@ -155,12 +168,28 @@ void init_display() {
     spi_write_command(ST7789_INVON);
     usleep(10000);
 
-    // Display on
+    // Step 6: Clear screen to black before turning on
+    std::cout << "  - Clearing screen to black..." << std::endl;
+    set_window(0, 0, DISPLAY_WIDTH - 1, DISPLAY_HEIGHT - 1);
+    gpio_write(GPIO_TFT_DATA_CONTROL, 1); // Data mode
+
+    uint16_t black = COLOR_BLACK;
+    for (int i = 0; i < DISPLAY_WIDTH * DISPLAY_HEIGHT; i++) {
+        spi_write_data_u16(black);
+    }
+    usleep(50000);
+
+    // Step 7: Turn on display
+    std::cout << "  - Turning on display..." << std::endl;
     spi_write_command(ST7789_DISPON);
     usleep(120000);
 
-    // Turn on backlight
+    // Step 8: Turn on backlight
+    std::cout << "  - Turning on backlight..." << std::endl;
     gpio_write(GPIO_TFT_BACKLIGHT, 1);
+    usleep(50000);
+
+    std::cout << "Display initialization complete!" << std::endl;
 }
 
 // Set display window

@@ -137,7 +137,7 @@ void spi_write_data_u16(int spi_fd, uint16_t data) {
 }
 
 void display_error_screen(const char* error_msg) {
-    log_message("Displaying error screen");
+    log_message("Displaying error screen with full reset");
 
     int spi_fd = open("/dev/spidev0.0", O_RDWR);
     if (spi_fd < 0) {
@@ -152,18 +152,29 @@ void display_error_screen(const char* error_msg) {
     ioctl(spi_fd, SPI_IOC_WR_BITS_PER_WORD, &bits);
     ioctl(spi_fd, SPI_IOC_WR_MAX_SPEED_HZ, &speed);
 
-    // Hardware reset
+    // Turn off backlight during reset
+    gpio_write(GPIO_TFT_BACKLIGHT, 0);
+    usleep(50000);
+
+    // Thorough hardware reset
+    log_message("Performing hardware reset for error screen");
+    gpio_write(GPIO_TFT_RESET_PIN, 1);
+    usleep(10000);
     gpio_write(GPIO_TFT_RESET_PIN, 0);
-    usleep(20000);
+    usleep(50000);  // Hold reset
     gpio_write(GPIO_TFT_RESET_PIN, 1);
     usleep(150000);
 
-    // Initialize display
+    // Software reset
+    log_message("Performing software reset for error screen");
     spi_write_command(spi_fd, ST7789_SWRESET);
-    usleep(150000);
+    usleep(200000);
+
+    // Wake up display
     spi_write_command(spi_fd, ST7789_SLPOUT);
     usleep(120000);
 
+    // Configure display
     spi_write_command(spi_fd, ST7789_MADCTL);
     uint8_t madctl = 0x60; // 90° rotation
     spi_write_data(spi_fd, &madctl, 1);
@@ -178,10 +189,12 @@ void display_error_screen(const char* error_msg) {
     spi_write_command(spi_fd, ST7789_INVON);
     usleep(10000);
 
+    // Turn on display
     spi_write_command(spi_fd, ST7789_DISPON);
     usleep(120000);
 
     // Fill screen with red (error indicator)
+    log_message("Filling error screen with red");
     spi_write_command(spi_fd, ST7789_CASET);
     spi_write_data_u16(spi_fd, 0);
     spi_write_data_u16(spi_fd, DISPLAY_WIDTH - 1);
@@ -198,22 +211,28 @@ void display_error_screen(const char* error_msg) {
         spi_write_data_u16(spi_fd, red_pixel);
     }
 
+    // Turn on backlight
     gpio_write(GPIO_TFT_BACKLIGHT, 1);
     close(spi_fd);
+    log_message("Error screen displayed");
 }
 
 void reset_display_hardware() {
-    log_message("Performing hardware reset");
+    log_message("Performing thorough hardware reset");
 
     // Turn off backlight
     gpio_write(GPIO_TFT_BACKLIGHT, 0);
     usleep(100000);
 
-    // Reset sequence
-    gpio_write(GPIO_TFT_RESET_PIN, 0);
-    usleep(50000);
+    // Thorough reset sequence
     gpio_write(GPIO_TFT_RESET_PIN, 1);
-    usleep(200000);
+    usleep(10000);
+    gpio_write(GPIO_TFT_RESET_PIN, 0);
+    usleep(50000);  // Hold reset longer
+    gpio_write(GPIO_TFT_RESET_PIN, 1);
+    usleep(200000); // Wait for reset to complete
+
+    log_message("Hardware reset complete");
 
     // Turn on backlight
     gpio_write(GPIO_TFT_BACKLIGHT, 1);
