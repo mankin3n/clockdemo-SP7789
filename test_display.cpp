@@ -375,25 +375,29 @@ int main() {
 
     // Test 9: Checkerboard patterns
     std::cout << "\n[Test 9] Testing checkerboard patterns..." << std::endl;
-    int square_sizes[] = {40, 20, 10, 5};
-    for (int i = 0; i < 4 && running; i++) {
-        std::cout << "  Checkerboard " << square_sizes[i] << "x" << square_sizes[i] << "..." << std::endl;
-        draw_checkerboard(square_sizes[i]);
-        sleep(1);
+    {
+        int square_sizes[] = {40, 20, 10, 5};
+        for (int i = 0; i < 4 && running; i++) {
+            std::cout << "  Checkerboard " << square_sizes[i] << "x" << square_sizes[i] << "..." << std::endl;
+            draw_checkerboard(square_sizes[i]);
+            sleep(1);
+        }
+        std::cout << "  PASSED: Checkerboard patterns working" << std::endl;
     }
-    std::cout << "  PASSED: Checkerboard patterns working" << std::endl;
 
     // Test 10: Stress test
     std::cout << "\n[Test 10] Running stress test (rapid updates)..." << std::endl;
     std::cout << "  Rapidly changing colors for 5 seconds..." << std::endl;
-    time_t start_time = time(nullptr);
-    int frame_count = 0;
-    while (running && (time(nullptr) - start_time) < 5) {
-        fill_screen(colors[frame_count % 5].color);
-        frame_count++;
+    {
+        time_t start_time = time(nullptr);
+        int frame_count = 0;
+        while (running && (time(nullptr) - start_time) < 5) {
+            fill_screen(colors[frame_count % 5].color);
+            frame_count++;
+        }
+        std::cout << "  PASSED: " << frame_count << " frames rendered (~"
+                  << (frame_count / 5) << " fps)" << std::endl;
     }
-    std::cout << "  PASSED: " << frame_count << " frames rendered (~"
-              << (frame_count / 5) << " fps)" << std::endl;
 
 cleanup:
     std::cout << "\n=====================================" << std::endl;

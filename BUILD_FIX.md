@@ -43,10 +43,32 @@ void init_display() {
 ### failsafe.cpp
 No changes needed - functions are properly ordered.
 
+## Issue #2 - goto Over Variable Initialization
+
+The test_display.cpp had another issue:
+```
+test_display.cpp:398:1: error: jump to label 'cleanup'
+test_display.cpp:390:9: note:   crosses initialization of 'int frame_count'
+```
+
+In C++, `goto` cannot jump over variable initializations. Fixed by wrapping the variables in scope blocks:
+
+```cpp
+// Before (Error):
+if (!running) goto cleanup;
+int square_sizes[] = {40, 20, 10, 5};  // ❌ goto jumps over this
+
+// After (Fixed):
+if (!running) goto cleanup;
+{  // New scope
+    int square_sizes[] = {40, 20, 10, 5};  // ✅ Safe in scope
+}
+```
+
 ## Files Modified
 
 - ✅ clock.cpp - Added forward declaration
-- ✅ test_display.cpp - Added forward declarations
+- ✅ test_display.cpp - Added forward declarations + scope blocks for goto
 - ✅ failsafe.cpp - No changes needed
 
 ## Build Status
