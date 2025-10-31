@@ -12,9 +12,9 @@
 #include <signal.h>
 #include <fstream>
 
-#define GPIO_TFT_DATA_CONTROL 25
-#define GPIO_TFT_RESET_PIN 24
-#define GPIO_TFT_BACKLIGHT 18
+#define GPIO_TFT_DATA_CONTROL 24  // DC pin
+#define GPIO_TFT_RESET_PIN 25     // RESET pin
+// Note: LED/Backlight connected to VCC (always on, no GPIO control needed)
 
 #define ST7789_SWRESET 0x01
 #define ST7789_SLPOUT 0x11
@@ -152,9 +152,7 @@ void display_error_screen(const char* error_msg) {
     ioctl(spi_fd, SPI_IOC_WR_BITS_PER_WORD, &bits);
     ioctl(spi_fd, SPI_IOC_WR_MAX_SPEED_HZ, &speed);
 
-    // Turn off backlight during reset
-    gpio_write(GPIO_TFT_BACKLIGHT, 0);
-    usleep(50000);
+    // Note: Backlight is connected to VCC (always on)
 
     // Thorough hardware reset
     log_message("Performing hardware reset for error screen");
@@ -211,8 +209,6 @@ void display_error_screen(const char* error_msg) {
         spi_write_data_u16(spi_fd, red_pixel);
     }
 
-    // Turn on backlight
-    gpio_write(GPIO_TFT_BACKLIGHT, 1);
     close(spi_fd);
     log_message("Error screen displayed");
 }
@@ -220,9 +216,7 @@ void display_error_screen(const char* error_msg) {
 void reset_display_hardware() {
     log_message("Performing thorough hardware reset");
 
-    // Turn off backlight
-    gpio_write(GPIO_TFT_BACKLIGHT, 0);
-    usleep(100000);
+    // Note: Backlight is connected to VCC (always on)
 
     // Thorough reset sequence
     gpio_write(GPIO_TFT_RESET_PIN, 1);
@@ -233,20 +227,13 @@ void reset_display_hardware() {
     usleep(200000); // Wait for reset to complete
 
     log_message("Hardware reset complete");
-
-    // Turn on backlight
-    gpio_write(GPIO_TFT_BACKLIGHT, 1);
 }
 
 void cleanup_gpio() {
     log_message("Cleaning up GPIO");
 
-    gpio_write(GPIO_TFT_BACKLIGHT, 0);
-    usleep(100000);
-
     gpio_unexport(GPIO_TFT_DATA_CONTROL);
     gpio_unexport(GPIO_TFT_RESET_PIN);
-    gpio_unexport(GPIO_TFT_BACKLIGHT);
 }
 
 bool check_spi_available() {
@@ -261,13 +248,11 @@ bool check_spi_available() {
 void setup_gpio() {
     gpio_export(GPIO_TFT_DATA_CONTROL);
     gpio_export(GPIO_TFT_RESET_PIN);
-    gpio_export(GPIO_TFT_BACKLIGHT);
 
     usleep(200000);
 
     gpio_set_direction(GPIO_TFT_DATA_CONTROL, "out");
     gpio_set_direction(GPIO_TFT_RESET_PIN, "out");
-    gpio_set_direction(GPIO_TFT_BACKLIGHT, "out");
 }
 
 int main(int argc, char* argv[]) {

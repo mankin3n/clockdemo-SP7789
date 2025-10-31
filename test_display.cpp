@@ -13,9 +13,9 @@
 #define DISPLAY_WIDTH 320
 #define DISPLAY_HEIGHT 240
 
-#define GPIO_TFT_DATA_CONTROL 25
-#define GPIO_TFT_RESET_PIN 24
-#define GPIO_TFT_BACKLIGHT 18
+#define GPIO_TFT_DATA_CONTROL 24  // DC pin
+#define GPIO_TFT_RESET_PIN 25     // RESET pin
+// Note: LED/Backlight connected to VCC (always on, no GPIO control needed)
 
 #define ST7789_SWRESET 0x01
 #define ST7789_RDDID 0x04
@@ -122,9 +122,7 @@ void set_window(int x0, int y0, int x1, int y1);
 void spi_write_data_u16(uint16_t data);
 
 void init_display() {
-    std::cout << "  Turning off backlight during initialization..." << std::endl;
-    gpio_write(GPIO_TFT_BACKLIGHT, 0);
-    usleep(50000);
+    // Note: Backlight is connected to VCC (always on)
 
     std::cout << "  Performing hardware reset..." << std::endl;
     gpio_write(GPIO_TFT_RESET_PIN, 1);
@@ -168,10 +166,6 @@ void init_display() {
     std::cout << "  Turning on display..." << std::endl;
     spi_write_command(ST7789_DISPON);
     usleep(120000);
-
-    std::cout << "  Turning on backlight..." << std::endl;
-    gpio_write(GPIO_TFT_BACKLIGHT, 1);
-    usleep(50000);
 }
 
 void set_window(int x0, int y0, int x1, int y1) {
@@ -241,15 +235,9 @@ void draw_checkerboard(int square_size) {
 }
 
 void test_backlight() {
-    std::cout << "Testing backlight control..." << std::endl;
-    for (int i = 0; i < 3; i++) {
-        std::cout << "  Backlight OFF" << std::endl;
-        gpio_write(GPIO_TFT_BACKLIGHT, 0);
-        sleep(1);
-        std::cout << "  Backlight ON" << std::endl;
-        gpio_write(GPIO_TFT_BACKLIGHT, 1);
-        sleep(1);
-    }
+    std::cout << "Skipping backlight control test..." << std::endl;
+    std::cout << "  Note: Backlight is connected to VCC (always on)" << std::endl;
+    sleep(1);
 }
 
 bool test_spi_communication() {
@@ -308,11 +296,9 @@ int main() {
     std::cout << "\n[Test 2] Setting up GPIO pins..." << std::endl;
     gpio_export(GPIO_TFT_DATA_CONTROL);
     gpio_export(GPIO_TFT_RESET_PIN);
-    gpio_export(GPIO_TFT_BACKLIGHT);
     usleep(200000);
     gpio_set_direction(GPIO_TFT_DATA_CONTROL, "out");
     gpio_set_direction(GPIO_TFT_RESET_PIN, "out");
-    gpio_set_direction(GPIO_TFT_BACKLIGHT, "out");
     std::cout << "  PASSED: GPIO pins configured" << std::endl;
 
     // Test 3: Initialize display
@@ -410,7 +396,6 @@ cleanup:
 
     // Cleanup
     fill_screen(COLOR_BLACK);
-    gpio_write(GPIO_TFT_BACKLIGHT, 0);
     close(spi_fd);
 
     return 0;

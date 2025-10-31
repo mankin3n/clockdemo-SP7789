@@ -19,11 +19,11 @@
 #define DISPLAY_DRAWABLE_WIDTH 320
 #define DISPLAY_DRAWABLE_HEIGHT 240
 
-// SPI Configuration
+// SPI Configuration (matching ST7789_TFT_RPI)
 #define SPI_BUS_CLOCK_DIVISOR 6
-#define GPIO_TFT_DATA_CONTROL 25
-#define GPIO_TFT_RESET_PIN 24
-#define GPIO_TFT_BACKLIGHT 18
+#define GPIO_TFT_DATA_CONTROL 24  // DC pin
+#define GPIO_TFT_RESET_PIN 25     // RESET pin
+// Note: LED/Backlight connected to VCC (always on, no GPIO control needed)
 
 // ST7789 Commands
 #define ST7789_NOP 0x00
@@ -124,10 +124,7 @@ void set_window(int x0, int y0, int x1, int y1);
 void init_display() {
     std::cout << "Initializing ST7789 display..." << std::endl;
 
-    // Step 1: Turn off backlight during initialization
-    std::cout << "  - Turning off backlight..." << std::endl;
-    gpio_write(GPIO_TFT_BACKLIGHT, 0);
-    usleep(50000);
+    // Note: LED/Backlight is connected to VCC (always on)
 
     // Step 2: Hardware reset sequence (ensures clean state)
     std::cout << "  - Performing hardware reset..." << std::endl;
@@ -186,11 +183,6 @@ void init_display() {
     std::cout << "  - Turning on display..." << std::endl;
     spi_write_command(ST7789_DISPON);
     usleep(120000);
-
-    // Step 8: Turn on backlight
-    std::cout << "  - Turning on backlight..." << std::endl;
-    gpio_write(GPIO_TFT_BACKLIGHT, 1);
-    usleep(50000);
 
     std::cout << "Display initialization complete!" << std::endl;
 }
@@ -319,13 +311,11 @@ int main() {
     // Setup GPIO pins
     gpio_export(GPIO_TFT_DATA_CONTROL);
     gpio_export(GPIO_TFT_RESET_PIN);
-    gpio_export(GPIO_TFT_BACKLIGHT);
 
     usleep(200000);
 
     gpio_set_direction(GPIO_TFT_DATA_CONTROL, "out");
     gpio_set_direction(GPIO_TFT_RESET_PIN, "out");
-    gpio_set_direction(GPIO_TFT_BACKLIGHT, "out");
 
     // Initialize display
     std::cout << "Initializing display..." << std::endl;
@@ -377,7 +367,6 @@ int main() {
 
     // Cleanup
     std::cout << "\nShutting down..." << std::endl;
-    gpio_write(GPIO_TFT_BACKLIGHT, 0);
     close(spi_fd);
 
     return 0;
