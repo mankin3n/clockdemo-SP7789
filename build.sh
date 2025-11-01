@@ -106,6 +106,29 @@ check_dependencies() {
         print_success "Linux headers found"
     fi
 
+    # Check for bcm2835 library
+    print_info "Checking for bcm2835 library..."
+    if [ -f "/usr/local/lib/libbcm2835.a" ] || [ -f "/usr/lib/libbcm2835.a" ]; then
+        print_success "bcm2835 library found"
+    else
+        print_warning "bcm2835 library not found"
+        print_info "Installing bcm2835 library..."
+
+        # Download and install bcm2835 library
+        cd /tmp
+        curl -sL http://www.airspayce.com/mikem/bcm2835/bcm2835-1.75.tar.gz | tar xz
+        cd bcm2835-1.75
+        ./configure
+        make
+        if [ "$EUID" -ne 0 ]; then
+            sudo make install
+        else
+            make install
+        fi
+        cd -
+        print_success "bcm2835 library installed"
+    fi
+
     # Install missing packages if needed
     if [ $needs_update -eq 1 ]; then
         print_info "Installing missing packages: ${missing_packages[*]}"
@@ -125,55 +148,18 @@ check_dependencies() {
     fi
 }
 
-# Check SPI configuration
+# Check hardware configuration
 check_spi() {
-    print_header "Checking SPI Configuration"
+    print_header "Checking Hardware Configuration"
 
-    # Check if SPI kernel module is loaded
-    if lsmod | grep -q spi_bcm2835; then
-        print_success "SPI kernel module loaded"
-    else
-        print_warning "SPI kernel module not loaded"
-        print_info "Attempting to load module..."
-        if [ "$EUID" -ne 0 ]; then
-            sudo modprobe spi_bcm2835 || print_error "Failed to load SPI module"
-        else
-            modprobe spi_bcm2835 || print_error "Failed to load SPI module"
-        fi
-    fi
-
-    # Check if SPI device exists
-    if [ -e /dev/spidev0.0 ]; then
-        print_success "SPI device /dev/spidev0.0 exists"
-
-        # Check permissions
-        if [ -r /dev/spidev0.0 ] && [ -w /dev/spidev0.0 ]; then
-            print_success "SPI device has correct permissions"
-        else
-            print_warning "SPI device permissions may need adjustment"
-            print_info "You may need to add user to 'spi' group: sudo usermod -a -G spi \$USER"
-        fi
-    else
-        print_error "SPI device /dev/spidev0.0 not found"
-        print_info "Enable SPI using: sudo raspi-config"
-        print_info "Navigate to: Interface Options -> SPI -> Enable"
-        return 1
-    fi
-
-    # Check boot config
-    if [ -f /boot/config.txt ]; then
-        if grep -q "^dtparam=spi=on" /boot/config.txt; then
-            print_success "SPI enabled in /boot/config.txt"
-        else
-            print_warning "SPI may not be enabled in /boot/config.txt"
-        fi
-    elif [ -f /boot/firmware/config.txt ]; then
-        if grep -q "^dtparam=spi=on" /boot/firmware/config.txt; then
-            print_success "SPI enabled in /boot/firmware/config.txt"
-        else
-            print_warning "SPI may not be enabled in /boot/firmware/config.txt"
-        fi
-    fi
+    print_info "Note: This project uses Software SPI (bit-banging)"
+    print_info "Hardware SPI is not required, but GPIO access is needed"
+    print_success "Software SPI will use the following GPIO pins:"
+    print_info "  CS:    GPIO12 (Pin 32)"
+    print_info "  DC:    GPIO24 (Pin 18)"
+    print_info "  RESET: GPIO25 (Pin 22)"
+    print_info "  MOSI:  GPIO19 (Pin 35)"
+    print_info "  SCLK:  GPIO26 (Pin 37)"
 }
 
 # Check GPIO access
@@ -222,8 +208,8 @@ clean_build() {
 build_clock() {
     print_header "Building Clock Application"
 
-    print_info "Compiling clock.cpp..."
-    g++ -O3 -Wall -o clock clock.cpp -lpthread
+    print_info "Compiling clock.cpp with bcm2835 library..."
+    g++ -O3 -Wall -std=c++11 -o clock clock.cpp -lbcm2835 -lpthread
 
     if [ -f clock ]; then
         print_success "Clock application built successfully"
@@ -238,8 +224,8 @@ build_clock() {
 build_failsafe() {
     print_header "Building Failsafe Wrapper"
 
-    print_info "Compiling failsafe.cpp..."
-    g++ -O3 -Wall -o failsafe failsafe.cpp
+    print_info "Compiling failsafe.cpp with bcm2835 library..."
+    g++ -O3 -Wall -std=c++11 -o failsafe failsafe.cpp -lbcm2835
 
     if [ -f failsafe ]; then
         print_success "Failsafe wrapper built successfully"
@@ -254,8 +240,8 @@ build_failsafe() {
 build_test() {
     print_header "Building Test Application"
 
-    print_info "Compiling test_display.cpp..."
-    g++ -O3 -Wall -o test_display test_display.cpp
+    print_info "Compiling test_display.cpp with bcm2835 library..."
+    g++ -O3 -Wall -std=c++11 -o test_display test_display.cpp -lbcm2835
 
     if [ -f test_display ]; then
         print_success "Test application built successfully"
@@ -302,7 +288,9 @@ EOF
 
 # Main build process
 main() {
-    print_header "ST7789 Digital Clock - Build Script (90° Rotation)"
+    print_header "ST7789 Digital Clock - Build Script"
+    print_info "Using ST7789_TFT_RPI driver architecture with bcm2835 library"
+    echo ""
 
     # System checks
     check_raspberry_pi
@@ -331,15 +319,20 @@ main() {
     print_info "Built binaries:"
     ls -lh clock failsafe test_display | awk '{print "  " $9 " (" $5 ")"}'
     echo ""
+    print_info "GPIO Pin Configuration (Software SPI):"
+    echo "  CS:    GPIO12 (Pin 32)"
+    echo "  DC:    GPIO24 (Pin 18)"
+    echo "  RESET: GPIO25 (Pin 22)"
+    echo "  MOSI:  GPIO19 (Pin 35)"
+    echo "  SCLK:  GPIO26 (Pin 37)"
+    echo ""
     print_info "Next steps:"
     echo "  1. Test the display: sudo ./test_display"
     echo "  2. Run the clock:    sudo ./start.sh"
     echo "  3. Or with failsafe: sudo ./failsafe ./clock"
     echo ""
-    print_warning "Note: You may need sudo to access GPIO and SPI"
-    print_info "To run without sudo, add your user to 'gpio' and 'spi' groups:"
-    echo "  sudo usermod -a -G gpio,spi \$USER"
-    echo "  Then log out and log back in"
+    print_warning "Note: Root access is required for bcm2835 library GPIO control"
+    print_info "Always run the programs with sudo"
     echo ""
 }
 

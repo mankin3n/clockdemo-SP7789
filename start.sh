@@ -40,49 +40,20 @@ else
     USE_FAILSAFE=1
 fi
 
-# Check for SPI device
-if [ ! -e /dev/spidev0.0 ]; then
-    print_error "SPI device not found!"
-    print_info "Enable SPI using: sudo raspi-config"
-    print_info "Navigate to: Interface Options -> SPI -> Enable"
+# Check if running as root (required for bcm2835 library)
+if [ "$EUID" -ne 0 ]; then
+    print_error "This program requires root access for GPIO control"
+    print_info "Please run with sudo: sudo $0"
     exit 1
 fi
 
-# Check SPI permissions
-if [ ! -r /dev/spidev0.0 ] || [ ! -w /dev/spidev0.0 ]; then
-    print_warning "SPI device permissions issue"
-    if [ "$EUID" -ne 0 ]; then
-        print_info "Try running with sudo, or add user to spi group:"
-        print_info "  sudo usermod -a -G spi $USER"
-        exit 1
-    fi
-fi
-
-# Check GPIO access
-if [ ! -w /sys/class/gpio/export ]; then
-    print_warning "Cannot write to GPIO export"
-    if [ "$EUID" -ne 0 ]; then
-        print_info "Try running with sudo, or add user to gpio group:"
-        print_info "  sudo usermod -a -G gpio $USER"
-        exit 1
-    fi
-fi
-
-# Load SPI module if not loaded
-if ! lsmod | grep -q spi_bcm2835; then
-    print_info "Loading SPI kernel module..."
-    if [ "$EUID" -ne 0 ]; then
-        sudo modprobe spi_bcm2835 || {
-            print_error "Failed to load SPI module"
-            exit 1
-        }
-    else
-        modprobe spi_bcm2835 || {
-            print_error "Failed to load SPI module"
-            exit 1
-        }
-    fi
-fi
+print_success "Running with root privileges"
+print_info "Using Software SPI with GPIO pins:"
+print_info "  CS:    GPIO12 (Pin 32)"
+print_info "  DC:    GPIO24 (Pin 18)"
+print_info "  RESET: GPIO25 (Pin 22)"
+print_info "  MOSI:  GPIO19 (Pin 35)"
+print_info "  SCLK:  GPIO26 (Pin 37)"
 
 # Set CPU governor to performance for better responsiveness
 if [ -f /sys/devices/system/cpu/cpu0/cpufreq/scaling_governor ]; then
